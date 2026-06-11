@@ -1,0 +1,71 @@
+version: "3.9"
+
+services:
+
+  # ── App 1: Product Verification ──────────────────────────────────────────
+  app1-backend:
+    build: ./app1_verification/backend
+    container_name: app1_backend
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      - DATABASE_URL=sqlite:////data/app1.db
+    volumes:
+      - app1_db:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+    resources:
+      limits:
+        memory: 512M     # csv.DictReader keeps this flat regardless of file size
+      reservations:
+        memory: 128M
+
+  app1-frontend:
+    build: ./app1_verification/frontend
+    container_name: app1_frontend
+    ports:
+      - "8501:8501"
+    env_file: .env
+    environment:
+      - API_URL=http://app1-backend:8000
+    depends_on:
+      app1-backend:
+        condition: service_healthy
+
+  # ── App 2: POD ────────────────────────────────────────────────────────────
+  app2-backend:
+    build: ./app2_pod/backend
+    container_name: app2_backend
+    ports:
+      - "8001:8000"
+    env_file: .env
+    environment:
+      - DATABASE_URL=sqlite:////data/app2.db
+    volumes:
+      - app2_db:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app2-frontend:
+    build: ./app2_pod/frontend
+    container_name: app2_frontend
+    ports:
+      - "8502:8501"
+    env_file: .env
+    environment:
+      - API_URL=http://app2-backend:8000
+    depends_on:
+      app2-backend:
+        condition: service_healthy
+
+volumes:
+  app1_db:
+  app2_db:
