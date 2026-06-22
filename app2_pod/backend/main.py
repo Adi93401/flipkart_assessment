@@ -31,3 +31,6 @@ app.include_router(pod_router)
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# uvicorn main:app --host 0.0.0.0 --port 8001 --timeout-keep-alive 300 --limit-max-requests 0

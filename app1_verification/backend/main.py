@@ -1,20 +1,16 @@
-"""
-App 1 — Product Verification System
-FastAPI entry point
-"""
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-from database import engine
+from database import engine, ensure_importjob_columns
 from models import Base
 from routers import upload, verify, reports
 
 # Create all tables on startup (safe to call repeatedly — skips existing tables)
 Base.metadata.create_all(bind=engine)
+ensure_importjob_columns()
 
 app = FastAPI(
     title="Product Verification API",
@@ -42,3 +38,4 @@ app.include_router(reports.router)
 @app.get("/health")
 def health():
     return {"status": "ok"}
+# uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 300 --limit-max-requests 0

@@ -56,5 +56,6 @@ class ImportJob(Base):
     inserted_rows  = Column(Integer, default=0)
     duplicate_rows = Column(Integer, default=0)
     error_message  = Column(String, nullable=True)
+    uploaded_by    = Column(String, nullable=True)
     created_at     = Column(DateTime, server_default=func.now())
     finished_at    = Column(DateTime, nullable=True)

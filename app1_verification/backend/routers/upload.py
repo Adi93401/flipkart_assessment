@@ -1,23 +1,11 @@
-"""
-Upload router
-─────────────
-POST /upload
-  • Saves the uploaded CSV to a temp file
-  • Creates an ImportJob row and returns its ID immediately (non-blocking)
-  • Spawns a background thread to stream-parse and bulk-insert
-
-GET /jobs/{job_id}
-  • Returns live progress (processed_rows / total_rows, status)
-"""
-
 import csv
-import io
 import os
 import tempfile
-import threading
 from datetime import datetime, date
+from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, BackgroundTasks
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, BackgroundTasks
+from pydantic import BaseModel
 from sqlalchemy import text
 import aiofiles
 from sqlalchemy.orm import Session
@@ -28,6 +16,19 @@ from models import ImportJob
 router = APIRouter(prefix="/api", tags=["upload"])
 
 CHUNK_SIZE = 5_000   # rows committed per transaction
+
+
+class RecentUploadOut(BaseModel):
+    id: int
+    filename: str
+    status: str
+    uploaded_by: Optional[str] = None
+    total_rows: int
+    processed_rows: int
+    inserted_rows: int
+    duplicate_rows: int
+    created_at: datetime
+    finished_at: Optional[datetime] = None
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
@@ -142,6 +143,7 @@ def _process_csv(job_id: int, tmp_path: str):
 async def upload_csv(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    username: str = Form(default=""),
     db: Session = Depends(get_db),
 ):
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
@@ -153,13 +155,42 @@ async def upload_csv(
         while chunk := await file.read(1024 * 1024):   # 1 MB at a time
             await f.write(chunk)
 
-    job = ImportJob(filename=file.filename, status="pending")
+    job = ImportJob(
+        filename=file.filename,
+        status="pending",
+        uploaded_by=username.strip() or "Unknown",
+    )
     db.add(job)
     db.commit()
     db.refresh(job)
 
     background_tasks.add_task(_process_csv, job.id, tmp.name)
-    return {"job_id": job.id, "message": "Upload accepted."}
+    return {
+        "job_id": job.id,
+        "message": "Upload accepted.",
+        "uploaded_by": job.uploaded_by,
+    }
+
+
+@router.get("/uploads", response_model=list[RecentUploadOut])
+def list_uploads(limit: int = 10, db: Session = Depends(get_db)):
+    rows = db.query(ImportJob).order_by(ImportJob.created_at.desc()).limit(limit).all()
+    return [
+        RecentUploadOut(
+            id=row.id,
+            filename=row.filename,
+            status=row.status,
+            uploaded_by=row.uploaded_by,
+            total_rows=row.total_rows,
+            processed_rows=row.processed_rows,
+            inserted_rows=row.inserted_rows,
+            duplicate_rows=row.duplicate_rows,
+            created_at=row.created_at,
+            finished_at=row.finished_at,
+        )
+        for row in rows
+    ]
+
 
 @router.get("/jobs/{job_id}")
 def get_job_status(job_id: int, db: Session = Depends(get_db)):
